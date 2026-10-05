@@ -6,30 +6,30 @@ struct WeighingPoint: Sendable {
     let fatPercent: Double?
 }
 
-protocol DayPoint: Identifiable, Sendable where ID == Date {
-    var day: Date { get }
-}
-
-extension DayPoint {
-    var id: Date { day }
-}
-
-struct TrendPoint: DayPoint {
+struct TrendPoint: Identifiable, Sendable {
     let day: Date
     let weightKg: Double
     let trendKg: Double
+
+    var id: Date { day }
 }
 
-struct CompositionPoint: DayPoint {
+struct BodySplit: Sendable {
     let day: Date
-    let fatChangeKg: Double
-    let leanChangeKg: Double
-}
-
-struct CompositionChange: Sendable {
     let fatKg: Double
     let leanKg: Double
+
+    var weightKg: Double { fatKg + leanKg }
+}
+
+struct CompositionComparison: Sendable {
+    let before: BodySplit
+    let after: BodySplit
     let days: Int
+
+    var weightChangeKg: Double { after.weightKg - before.weightKg }
+    var fatChangeKg: Double { after.fatKg - before.fatKg }
+    var leanChangeKg: Double { after.leanKg - before.leanKg }
 }
 
 enum CompositionVerdict: Sendable {
@@ -50,7 +50,7 @@ enum GoalForecast: Equatable, Sendable {
     case eta(date: Date, goalKg: Double)
 }
 
-extension Collection where Element: DayPoint {
+extension Collection where Element == TrendPoint {
     func nearest(to day: Date?) -> Element? {
         guard let day else { return nil }
         return self.min { abs($0.day.timeIntervalSince(day)) < abs($1.day.timeIntervalSince(day)) }
@@ -122,36 +122,31 @@ enum WeightAnalysis {
         return .eta(date: date, goalKg: goalKg)
     }
 
-    static func compositionTrend(_ points: [WeighingPoint], since start: Date, calendar: Calendar = .current) -> [CompositionPoint] {
+    static func compositionComparison(
+        _ points: [WeighingPoint],
+        overDays windowDays: Int,
+        minimumDays: Int,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) -> CompositionComparison? {
+        guard let start = calendar.date(byAdding: .day, value: -windowDays, to: now) else { return nil }
         let daily = groupedByDay(points.filter { $0.fatPercent != nil }, calendar: calendar)
-        let days = daily.map(\.day)
-        let fat = trailingMeans(days, daily.map { $0.points.map { masses($0).fat }.mean }, calendar: calendar)
-        let lean = trailingMeans(days, daily.map { $0.points.map { masses($0).lean }.mean }, calendar: calendar)
-        guard let base = days.firstIndex(where: { $0 >= start }) else { return [] }
-        return (base..<days.count).map {
-            CompositionPoint(day: days[$0], fatChangeKg: fat[$0] - fat[base], leanChangeKg: lean[$0] - lean[base])
-        }
-    }
-
-    static func compositionChange(_ points: [WeighingPoint], now: Date = .now, calendar: Calendar = .current) -> CompositionChange? {
-        guard let start = calendar.date(byAdding: .day, value: -compositionWindowDays, to: now) else { return nil }
-        let window = points.filter { $0.date >= start && $0.fatPercent != nil }.sorted { $0.date < $1.date }
-        guard window.count >= 2, let first = window.first, let last = window.last else { return nil }
-        let span = days(from: first.date, to: last.date, calendar: calendar)
-        guard span >= minimumRateSpanDays else { return nil }
-        let sampleSize = min(3, window.count / 2)
-        let before = window.prefix(sampleSize).map(masses)
-        let after = window.suffix(sampleSize).map(masses)
-        return CompositionChange(
-            fatKg: after.map { $0.fat }.mean - before.map { $0.fat }.mean,
-            leanKg: after.map { $0.lean }.mean - before.map { $0.lean }.mean,
+        let dates = daily.map(\.day)
+        let fat = trailingMeans(dates, daily.map { $0.points.map { masses($0).fat }.mean }, calendar: calendar)
+        let lean = trailingMeans(dates, daily.map { $0.points.map { masses($0).lean }.mean }, calendar: calendar)
+        guard let first = dates.firstIndex(where: { $0 >= start }), let last = dates.indices.last else { return nil }
+        let span = days(from: dates[first], to: dates[last], calendar: calendar)
+        guard span >= minimumDays else { return nil }
+        return CompositionComparison(
+            before: BodySplit(day: dates[first], fatKg: fat[first], leanKg: lean[first]),
+            after: BodySplit(day: dates[last], fatKg: fat[last], leanKg: lean[last]),
             days: span
         )
     }
 
-    static func verdict(_ change: CompositionChange) -> CompositionVerdict {
+    static func verdict(_ comparison: CompositionComparison) -> CompositionVerdict {
         let threshold = 0.3
-        return switch (change.fatKg, change.leanKg) {
+        return switch (comparison.fatChangeKg, comparison.leanChangeKg) {
         case let (fat, lean) where fat < -threshold && lean >= -threshold: .losingFat
         case let (fat, lean) where fat < -threshold && lean < -threshold: .losingLean
         case let (fat, lean) where fat > threshold && lean > threshold: .gainingBoth

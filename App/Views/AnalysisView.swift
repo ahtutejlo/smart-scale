@@ -22,7 +22,11 @@ struct AnalysisView: View {
                     rate: rate,
                     forecast: WeightAnalysis.forecast(currentKg: trend.last?.trendKg, weeklyRateKg: rate, goalKg: profile.settings.goalWeightKg)
                 )
-                CompositionCard(change: WeightAnalysis.compositionChange(points))
+                CompositionCard(comparison: WeightAnalysis.compositionComparison(
+                    points,
+                    overDays: WeightAnalysis.compositionWindowDays,
+                    minimumDays: WeightAnalysis.minimumRateSpanDays
+                ))
             }
             .padding()
         }
@@ -86,19 +90,19 @@ private struct PaceCard: View {
 }
 
 private struct CompositionCard: View {
-    let change: CompositionChange?
+    let comparison: CompositionComparison?
 
     var body: some View {
         Card(title: "Жир проти м'язів") {
-            if let change {
+            if let comparison {
                 HStack(spacing: 24) {
-                    MetricCell(title: "Жир", value: change.fatKg.signedKg)
-                    MetricCell(title: "Суха маса", value: change.leanKg.signedKg)
+                    MetricCell(title: "Жир", value: comparison.fatChangeKg.signedKg)
+                    MetricCell(title: "Маса без жиру", value: comparison.leanChangeKg.signedKg)
                 }
-                let verdict = summary(WeightAnalysis.verdict(change))
+                let verdict = summary(WeightAnalysis.verdict(comparison))
                 Label(verdict.text, systemImage: verdict.symbol)
                     .font(.callout)
-                Explanation("Порівняння перших і останніх зважувань за \(change.days) днів. Побутові ваги помиляються в % жиру на кілька відсотків, тому дивись на напрям, а не на точне число.")
+                Explanation("Зміна за \(comparison.days) днів. Маса без жиру — це м'язи, вода, кістки й органи. Побутові ваги помиляються в % жиру на кілька відсотків, тому дивись на напрям, а не на точне число.")
             } else {
                 Explanation("Потрібні зважування з % жиру щонайменше за \(WeightAnalysis.minimumRateSpanDays) днів.")
             }
@@ -110,13 +114,13 @@ private struct CompositionCard: View {
         case .losingFat:
             ("Худнеш за рахунок жиру, а м'язи тримаються.", "checkmark.circle")
         case .losingLean:
-            ("Разом із жиром іде й суха маса. Більше білка і силових тренувань допоможуть зберегти м'язи.", "exclamationmark.triangle")
+            ("Разом із жиром іде й маса без жиру, тобто м'язи. Більше білка і силових тренувань допоможуть зберегти м'язи.", "exclamationmark.triangle")
         case .gainingBoth:
-            ("Ростуть і жир, і суха маса.", "arrow.up.circle")
+            ("Ростуть і жир, і маса без жиру.", "arrow.up.circle")
         case .gainingFat:
             ("Жир росте.", "exclamationmark.triangle")
         case .gainingLean:
-            ("Суха маса росте, а жир стоїть. Схоже на набір м'язів.", "checkmark.circle")
+            ("Маса без жиру росте, а жир стоїть. Схоже на набір м'язів.", "checkmark.circle")
         case .stable:
             ("Склад тіла стабільний.", "equal.circle")
         }

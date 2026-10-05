@@ -38,7 +38,7 @@ struct TrendsView: View {
         let loaded = Array(weighings.drop { $0.date < smoothingStart })
         let points = loaded.points(for: profile.userProfile)
         let trend = WeightAnalysis.dailyTrend(points).filter { $0.day >= start }
-        let composition = WeightAnalysis.compositionTrend(points, since: start)
+        let comparison = WeightAnalysis.compositionComparison(points, overDays: period.rawValue, minimumDays: 1)
         let rows = zip(loaded, points)
             .filter { $0.0.date >= start }
             .reversed()
@@ -61,15 +61,15 @@ struct TrendsView: View {
                 }
             }
             Section {
-                if composition.count < 2 {
-                    Text("Потрібні щонайменше два дні зважувань з % жиру.").foregroundStyle(.secondary)
+                if let comparison {
+                    CompositionComparisonView(comparison: comparison)
                 } else {
-                    CompositionChart(points: composition)
+                    Text("Потрібні щонайменше два дні зважувань з % жиру.").foregroundStyle(.secondary)
                 }
             } header: {
-                Text("Жир проти сухої маси")
+                Text("З чого складається вага")
             } footer: {
-                Text("Зміна від першого дня періоду, згладжена за \(WeightAnalysis.trendWindowDays) днів. Суха маса — це все, крім жиру: м'язи, вода, кістки.")
+                Text("Маса без жиру — це м'язи, вода, кістки й органи. Кожне значення — середнє за \(WeightAnalysis.trendWindowDays) днів, тому може трохи відрізнятися від окремого зважування.")
             }
             Section("Зважування") {
                 ForEach(rows) { WeighingRow(weighing: $0.weighing, fatPercent: $0.fatPercent) }
@@ -163,52 +163,67 @@ private struct WeightChart: View {
     }
 }
 
-private struct CompositionChart: View {
-    private struct Series: Identifiable {
-        let name: String
-        let value: KeyPath<CompositionPoint, Double>
-
-        var id: String { name }
-    }
-
-    let points: [CompositionPoint]
-    @State private var selectedDay: Date?
-
-    private let series = [
-        Series(name: "Жир", value: \.fatChangeKg),
-        Series(name: "Суха маса", value: \.leanChangeKg),
-    ]
+private struct CompositionComparisonView: View {
+    let comparison: CompositionComparison
 
     var body: some View {
-        Chart {
-            RuleMark(y: .value("Без змін", 0))
-                .foregroundStyle(Color(.separator))
-            ForEach(series) { series in
-                ForEach(points) { point in
-                    LineMark(x: .value("День", point.day, unit: .day), y: .value("Зміна, кг", point[keyPath: series.value]))
-                        .foregroundStyle(by: .value("Показник", series.name))
-                        .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round))
-                        .interpolationMethod(.monotone)
-                }
-                if let last = points.last {
-                    PointMark(x: .value("День", last.day, unit: .day), y: .value("Зміна, кг", last[keyPath: series.value]))
-                        .foregroundStyle(by: .value("Показник", series.name))
-                        .annotation(position: .trailing) { ChartLabel(text: series.name) }
-                }
-            }
-            if let selected = points.nearest(to: selectedDay) {
-                SelectionRule(
-                    day: selected.day,
-                    lines: ["Жир \(selected.fatChangeKg.signedKg)", "Суха маса \(selected.leanChangeKg.signedKg)"]
-                )
+        let maxWeightKg = max(comparison.before.weightKg, comparison.after.weightKg)
+        VStack(alignment: .leading, spacing: 14) {
+            Text("За цей час: вага \(comparison.weightChangeKg.signedKg), жир \(comparison.fatChangeKg.signedKg), без жиру \(comparison.leanChangeKg.signedKg)")
+                .font(.subheadline.weight(.semibold))
+            SplitBar(title: title(for: comparison.before.day), split: comparison.before, maxWeightKg: maxWeightKg)
+            SplitBar(title: title(for: comparison.after.day), split: comparison.after, maxWeightKg: maxWeightKg)
+            HStack(spacing: 16) {
+                legend("жир", color: ChartPalette.secondary)
+                legend("без жиру", color: ChartPalette.primary)
             }
         }
-        .chartForegroundStyleScale(["Жир": ChartPalette.secondary, "Суха маса": ChartPalette.primary])
-        .chartLegend(position: .bottom, alignment: .leading)
-        .chartXSelection(value: $selectedDay)
-        .chartPlotStyle { $0.padding(.trailing, 72) }
-        .frame(height: 220)
         .padding(.vertical, 8)
+    }
+
+    private func title(for day: Date) -> String {
+        Calendar.current.isDateInToday(day) ? "Сьогодні" : day.formatted(.dateTime.day().month(.abbreviated))
+    }
+
+    private func legend(_ text: String, color: Color) -> some View {
+        HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 10, height: 10)
+            Text(text).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct SplitBar: View {
+    let title: String
+    let split: BodySplit
+    let maxWeightKg: Double
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(split.weightKg.kg).fontWeight(.semibold).monospacedDigit()
+            }
+            .font(.subheadline)
+            GeometryReader { proxy in
+                let width = proxy.size.width * split.weightKg / maxWeightKg
+                HStack(spacing: 2) {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(ChartPalette.secondary)
+                        .frame(width: max(0, width - 2) * split.fatKg / split.weightKg)
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(ChartPalette.primary)
+                }
+                .frame(width: width)
+            }
+            .frame(height: 20)
+            Text("жир \(split.fatKg.kg) · без жиру \(split.leanKg.kg)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

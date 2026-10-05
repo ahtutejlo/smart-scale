@@ -151,7 +151,7 @@ private struct ResultCard: View {
         let composition = reading.composition(for: profile)
         let rows: [(String, String?)] = [
             ("Жир", composition?.bodyFatPercent.percent),
-            ("Суха маса", composition?.leanMassKg.kg),
+            ("Маса без жиру", composition?.leanMassKg.kg),
             ("М'язи", composition?.musclePercent?.percent),
             ("Вода", composition?.waterPercent?.percent),
             ("Вісцеральний жир", composition?.visceralFat.map { $0.formatted(digits: 1) }),
