@@ -1,0 +1,6 @@
+// Copy to Local.xcconfig and fill in your values. Git ignores Local.xcconfig.
+DEVELOPMENT_TEAM = ABCDE12345
+PRODUCT_BUNDLE_IDENTIFIER = com.yourname.smartscale
+
+// Used only by scripts/refresh-iphone.sh. Find it with: xcrun devicectl list devices
+IPHONE_UDID = 00000000-0000000000000000

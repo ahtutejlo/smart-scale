@@ -1,0 +1,3 @@
+PRODUCT_BUNDLE_IDENTIFIER = com.example.smartscale
+
+#include? "Local.xcconfig"

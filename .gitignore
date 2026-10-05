@@ -1,0 +1,10 @@
+.DS_Store
+.build/
+.swiftpm/
+*.xcodeproj/
+xcuserdata/
+DerivedData/
+captures/
+App/Info.plist
+App/SmartScale.entitlements
+Config/Local.xcconfig

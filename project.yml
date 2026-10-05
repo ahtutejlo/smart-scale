@@ -1,0 +1,42 @@
+name: SmartScale
+options:
+  deploymentTarget:
+    iOS: "18.0"
+  developmentLanguage: uk
+packages:
+  ScaleKit:
+    path: ScaleKit
+targets:
+  SmartScale:
+    type: application
+    platform: iOS
+    sources:
+      - App
+    dependencies:
+      - package: ScaleKit
+        product: ScaleKit
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Ваги
+        CFBundleShortVersionString: "0.1"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSBluetoothAlwaysUsageDescription: Потрібно, щоб отримувати вагу та склад тіла з ваг Active Era.
+        NSHealthShareUsageDescription: Потрібно, щоб імпортувати твою історію зважувань з Apple Health.
+        NSHealthUpdateUsageDescription: Потрібно, щоб записувати вагу та склад тіла в Apple Health.
+    entitlements:
+      path: App/SmartScale.entitlements
+      properties:
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
+    configFiles:
+      Debug: Config/App.xcconfig
+      Release: Config/App.xcconfig
+    settings:
+      base:
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_VERSION: "6.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: NO
