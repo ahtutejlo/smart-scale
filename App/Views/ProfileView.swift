@@ -2,8 +2,15 @@ import ScaleKit
 import SwiftUI
 
 struct ProfileView: View {
+    private enum Field {
+        case age
+        case height
+        case goal
+    }
+
     @Environment(ProfileStore.self) private var profile
     @Environment(WeighingRecorder.self) private var recorder
+    @FocusState private var focusedField: Field?
 
     var body: some View {
         @Bindable var profile = profile
@@ -14,14 +21,19 @@ struct ProfileView: View {
                     Text("Жінка").tag(UserProfile.Sex.female)
                 }
                 row("Вік", unit: "років") {
-                    TextField("0", value: $profile.settings.age, format: .number).keyboardType(.numberPad)
+                    TextField("напр. 30", value: $profile.settings.age, format: .number)
+                        .keyboardType(.numberPad)
+                        .focused($focusedField, equals: .age)
                 }
                 row("Зріст", unit: "см") {
-                    TextField("0", value: $profile.settings.heightCm, format: .number).keyboardType(.numberPad)
+                    TextField("напр. 175", value: $profile.settings.heightCm, format: .number)
+                        .keyboardType(.numberPad)
+                        .focused($focusedField, equals: .height)
                 }
                 row("Цільова вага", unit: "кг") {
-                    TextField("не задано", value: $profile.settings.goalWeightKg, format: .number.precision(.fractionLength(0...1)))
+                    TextField("напр. 80", value: $profile.settings.goalWeightKg, format: .number.precision(.fractionLength(0...1)))
                         .keyboardType(.decimalPad)
+                        .focused($focusedField, equals: .goal)
                 }
             } header: {
                 Text("Про тебе")
@@ -48,6 +60,15 @@ struct ProfileView: View {
             } footer: {
                 if let message = recorder.healthMessage {
                     Text(message)
+                }
+            }
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .toolbar {
+            if focusedField != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Готово") { focusedField = nil }
+                        .fontWeight(.semibold)
                 }
             }
         }

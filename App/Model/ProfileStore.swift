@@ -7,8 +7,8 @@ import ScaleKit
 final class ProfileStore {
     struct Settings: Codable, Equatable {
         var sex: UserProfile.Sex = .male
-        var age = 0
-        var heightCm = 0
+        var age: Int?
+        var heightCm: Int?
         var goalWeightKg: Double?
         var writesToHealth = true
         var hasImportedHealthHistory = false
@@ -28,14 +28,14 @@ final class ProfileStore {
     }
 
     var isComplete: Bool {
-        settings.age > 0 && settings.heightCm > 0
+        userProfile != nil
     }
 
     var userProfile: UserProfile? {
-        guard isComplete else { return nil }
+        guard let age = settings.age.positive, let heightCm = settings.heightCm.positive else { return nil }
         return UserProfile(
-            heightCm: settings.heightCm,
-            age: settings.age,
+            heightCm: heightCm,
+            age: age,
             sex: settings.sex,
             initialWeightKg: settings.goalWeightKg ?? 75,
             goalWeightKg: settings.goalWeightKg
@@ -46,5 +46,24 @@ final class ProfileStore {
         if let data = try? JSONEncoder().encode(settings) {
             defaults.set(data, forKey: Self.key)
         }
+    }
+}
+
+extension ProfileStore.Settings {
+    init(from decoder: Decoder) throws {
+        self.init()
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sex = try container.decodeIfPresent(UserProfile.Sex.self, forKey: .sex) ?? sex
+        age = try container.decodeIfPresent(Int.self, forKey: .age).positive
+        heightCm = try container.decodeIfPresent(Int.self, forKey: .heightCm).positive
+        goalWeightKg = try container.decodeIfPresent(Double.self, forKey: .goalWeightKg)
+        writesToHealth = try container.decodeIfPresent(Bool.self, forKey: .writesToHealth) ?? writesToHealth
+        hasImportedHealthHistory = try container.decodeIfPresent(Bool.self, forKey: .hasImportedHealthHistory) ?? hasImportedHealthHistory
+    }
+}
+
+private extension Optional where Wrapped == Int {
+    var positive: Int? {
+        flatMap { $0 > 0 ? $0 : nil }
     }
 }
