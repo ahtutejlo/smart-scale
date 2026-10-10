@@ -20,6 +20,7 @@ final class Weighing {
     var leftLegPercent: Double?
     var importedBodyFatPercent: Double?
     var source: Source
+    var person: Person?
 
     init(reading: ScaleReading, source: Source) {
         date = reading.date
@@ -49,12 +50,12 @@ final class Weighing {
         )
     }
 
-    func point(for profile: UserProfile?) -> WeighingPoint {
-        WeighingPoint(
-            date: date,
-            weightKg: weightKg,
-            fatPercent: reading.composition(for: profile)?.bodyFatPercent ?? importedBodyFatPercent
-        )
+    var composition: BodyComposition? {
+        reading.composition(for: person?.userProfile)
+    }
+
+    var point: WeighingPoint {
+        WeighingPoint(date: date, weightKg: weightKg, fatPercent: composition?.bodyFatPercent ?? importedBodyFatPercent)
     }
 }
 
@@ -65,8 +66,12 @@ extension ScaleReading {
 }
 
 extension Sequence where Element == Weighing {
-    func points(for profile: UserProfile?) -> [WeighingPoint] {
-        map { $0.point(for: profile) }
+    var points: [WeighingPoint] {
+        map(\.point)
+    }
+
+    func belonging(to person: Person?) -> [Weighing] {
+        filter { $0.person?.id == person?.id }
     }
 }
 

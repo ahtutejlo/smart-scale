@@ -4,7 +4,7 @@ import SwiftUI
 @main
 struct SmartScaleApp: App {
     private let container: ModelContainer
-    @State private var profile: ProfileStore
+    @State private var settings: SettingsStore
     @State private var recorder: WeighingRecorder
 
     init() {
@@ -17,17 +17,18 @@ struct SmartScaleApp: App {
         #endif
         let container: ModelContainer
         do {
-            container = try ModelContainer(for: Weighing.self, configurations: ModelConfiguration(isStoredInMemoryOnly: isDemo))
+            container = try ModelContainer(for: Weighing.self, Person.self, configurations: ModelConfiguration(isStoredInMemoryOnly: isDemo))
         } catch {
             fatalError("Cannot open the weighings store: \(error)")
         }
-        let profile = ProfileStore(defaults: defaults)
+        PeopleSetup.ensureOwner(in: container.mainContext, defaults: defaults)
+        let settings = SettingsStore(defaults: defaults)
         self.container = container
-        _profile = State(initialValue: profile)
-        _recorder = State(initialValue: WeighingRecorder(context: container.mainContext, health: HealthSync(), profile: profile))
+        _settings = State(initialValue: settings)
+        _recorder = State(initialValue: WeighingRecorder(context: container.mainContext, health: HealthSync(), settings: settings))
         #if DEBUG
         if isDemo {
-            DemoData.seed(into: container.mainContext, profile: profile)
+            DemoData.seed(into: container.mainContext, settings: settings)
         }
         #endif
     }
@@ -35,7 +36,7 @@ struct SmartScaleApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
-                .environment(profile)
+                .environment(settings)
                 .environment(recorder)
         }
         .modelContainer(container)

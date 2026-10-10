@@ -4,33 +4,29 @@ import SwiftUI
 
 struct WeighView: View {
     @Environment(WeighingRecorder.self) private var recorder
-    @Environment(ProfileStore.self) private var profile
-    @Query(.newest(limit: 10)) private var recent: [Weighing]
+    @Query(.newest(limit: 1)) private var latest: [Weighing]
+    @Query private var people: [Person]
 
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                if profile.isComplete {
-                    status
-                } else {
+                status
+                if people.owner?.userProfile == nil {
                     Card(title: "Спершу профіль") {
-                        Text("Вкажи вік і зріст у вкладці «Профіль». Без них ваги не порахують склад тіла.")
+                        Text("Вкажи свій вік і зріст у вкладці «Люди». Без них ваги не порахують склад тіла.")
                     }
                 }
-                if case let .finished(reading) = recorder.connection.state {
-                    ResultCard(
-                        title: "Результат",
-                        reading: reading,
-                        previous: recent.first { $0.date < reading.date.addingTimeInterval(-60) },
-                        profile: profile.userProfile
-                    )
-                } else if let last = recent.first {
-                    ResultCard(title: "Останнє зважування", reading: last.reading, previous: recent.dropFirst().first, profile: profile.userProfile)
+                if let weighing = latest.first {
+                    ResultCard(title: isJustFinished ? "Результат" : "Останнє зважування", weighing: weighing, people: people)
                 }
             }
             .padding()
         }
         .navigationTitle("Зважування")
+    }
+
+    private var isJustFinished: Bool {
+        if case .finished = recorder.connection.state { true } else { false }
     }
 
     @ViewBuilder
@@ -122,33 +118,48 @@ private struct MeasuringCard: View {
 
 private struct ResultCard: View {
     let title: String
-    let reading: ScaleReading
-    let previous: Weighing?
-    let profile: UserProfile?
+    let weighing: Weighing
+    let people: [Person]
 
     var body: some View {
         Card(title: title) {
             HStack(alignment: .firstTextBaseline) {
-                HeroNumber(reading.weightKg.kg, size: 44)
+                HeroNumber(weighing.weightKg.kg, size: 44)
                 Spacer()
-                Text(reading.date.formatted(date: .abbreviated, time: .shortened))
+                Text(weighing.date.formatted(date: .abbreviated, time: .shortened))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-            if let previous {
-                Text("Від попереднього зважування: \((reading.weightKg - previous.weightKg).signedKg)")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+            if let person = weighing.person {
+                HStack {
+                    Label(person.displayName, systemImage: "person.fill")
+                        .font(.callout.weight(.semibold))
+                    Spacer()
+                    Menu("Змінити") { AssignActions(weighing: weighing, people: people) }
+                        .font(.callout)
+                }
+                if let previous = previous(of: person) {
+                    Text("Від попереднього зважування: \((weighing.weightKg - previous.weightKg).signedKg)")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 12) {
+                    ForEach(metrics, id: \.title) { MetricCell(title: $0.title, value: $0.value) }
+                }
+                .padding(.top, 8)
+            } else {
+                WhoWasIt(weighing: weighing, people: people)
             }
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 12) {
-                ForEach(metrics, id: \.title) { MetricCell(title: $0.title, value: $0.value) }
-            }
-            .padding(.top, 8)
         }
     }
 
+    private func previous(of person: Person) -> Weighing? {
+        let cutoff = weighing.date.addingTimeInterval(-60)
+        return person.weighings.filter { $0.date < cutoff }.max { $0.date < $1.date }
+    }
+
     private var metrics: [(title: String, value: String)] {
-        let composition = reading.composition(for: profile)
+        let composition = weighing.composition
         let rows: [(String, String?)] = [
             ("Жир", composition?.bodyFatPercent.percent),
             ("Маса без жиру", composition?.leanMassKg.kg),
@@ -158,9 +169,30 @@ private struct ResultCard: View {
             ("Кістки", composition?.boneMassKg?.kg),
             ("Базовий обмін", composition?.bmrKcal.map { "\($0) ккал" }),
             ("Метаболічний вік", composition?.metabolicAge.map { "\($0)" }),
-            ("Пульс", reading.heartRate.map { "\($0) уд/хв" }),
-            ("Баланс ліва / права", reading.leftLegPercent.map { "\(Int($0.rounded())) / \(Int((100 - $0).rounded())) %" }),
+            ("Пульс", weighing.heartRate.map { "\($0) уд/хв" }),
+            ("Баланс ліва / права", weighing.leftLegPercent.map { "\(Int($0.rounded())) / \(Int((100 - $0).rounded())) %" }),
         ]
         return rows.compactMap { title, value in value.map { (title, $0) } }
+    }
+}
+
+private struct WhoWasIt: View {
+    let weighing: Weighing
+    let people: [Person]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Чиє це зважування?")
+                .font(.headline)
+            Text("Ця вага не схожа на нікого зі списку або схожа одразу на кількох.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            AssignActions(weighing: weighing, people: people)
+                .buttonStyle(.bordered)
+            Text("Нову людину можна додати у вкладці «Люди».")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.top, 8)
     }
 }

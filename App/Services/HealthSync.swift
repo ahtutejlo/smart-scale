@@ -3,11 +3,23 @@ import HealthKit
 import ScaleKit
 
 final class HealthSync: Sendable {
+    private enum Kind: String, CaseIterable {
+        case mass
+        case bmi
+        case fat
+        case lean
+
+        var quantityType: HKQuantityType {
+            switch self {
+            case .mass: HKQuantityType(.bodyMass)
+            case .bmi: HKQuantityType(.bodyMassIndex)
+            case .fat: HKQuantityType(.bodyFatPercentage)
+            case .lean: HKQuantityType(.leanBodyMass)
+            }
+        }
+    }
+
     private let store = HKHealthStore()
-    private let bodyMass = HKQuantityType(.bodyMass)
-    private let bodyFat = HKQuantityType(.bodyFatPercentage)
-    private let leanMass = HKQuantityType(.leanBodyMass)
-    private let bodyMassIndex = HKQuantityType(.bodyMassIndex)
     private let kilograms = HKUnit.gramUnit(with: .kilo)
 
     var isAvailable: Bool {
@@ -17,9 +29,9 @@ final class HealthSync: Sendable {
     func history() async throws -> [WeighingPoint] {
         try await requestAccess()
         let fromOtherApps = NSCompoundPredicate(notPredicateWithSubpredicate: HKQuery.predicateForObjects(from: HKSource.default()))
-        let weights = try await samples(of: bodyMass, matching: fromOtherApps)
+        let weights = try await samples(of: Kind.mass.quantityType, matching: fromOtherApps)
         let fatByMinute = Dictionary(
-            try await samples(of: bodyFat, matching: fromOtherApps).map { (minute($0.startDate), $0.quantity.doubleValue(for: .percent()) * 100) },
+            try await samples(of: Kind.fat.quantityType, matching: fromOtherApps).map { (minute($0.startDate), $0.quantity.doubleValue(for: .percent()) * 100) },
             uniquingKeysWith: { first, _ in first }
         )
         return weights.map { sample in
@@ -34,30 +46,40 @@ final class HealthSync: Sendable {
 
     func save(_ reading: ScaleReading, composition: BodyComposition?, heightCm: Int?) async throws {
         try await requestAccess()
-        let syncPrefix = "smartscale-\(Int(reading.date.timeIntervalSince1970))"
-        func sample(_ type: HKQuantityType, _ unit: HKUnit, _ value: Double, _ suffix: String) -> HKQuantitySample {
+        func sample(_ kind: Kind, _ unit: HKUnit, _ value: Double) -> HKQuantitySample {
             HKQuantitySample(
-                type: type,
+                type: kind.quantityType,
                 quantity: HKQuantity(unit: unit, doubleValue: value),
                 start: reading.date,
                 end: reading.date,
-                metadata: [HKMetadataKeySyncIdentifier: "\(syncPrefix)-\(suffix)", HKMetadataKeySyncVersion: 1]
+                metadata: [HKMetadataKeySyncIdentifier: syncIdentifier(reading.date, kind), HKMetadataKeySyncVersion: 1]
             )
         }
-        var samples = [sample(bodyMass, kilograms, reading.weightKg, "mass")]
+        var samples = [sample(.mass, kilograms, reading.weightKg)]
         if let heightCm, heightCm > 0 {
             let heightM = Double(heightCm) / 100
-            samples.append(sample(bodyMassIndex, .count(), reading.weightKg / (heightM * heightM), "bmi"))
+            samples.append(sample(.bmi, .count(), reading.weightKg / (heightM * heightM)))
         }
         if let composition {
-            samples.append(sample(bodyFat, .percent(), composition.bodyFatPercent / 100, "fat"))
-            samples.append(sample(leanMass, kilograms, composition.leanMassKg, "lean"))
+            samples.append(sample(.fat, .percent(), composition.bodyFatPercent / 100))
+            samples.append(sample(.lean, kilograms, composition.leanMassKg))
         }
         try await store.save(samples)
     }
 
+    func delete(at date: Date) async throws {
+        try await requestAccess()
+        for kind in Kind.allCases {
+            let predicate = HKQuery.predicateForObjects(withMetadataKey: HKMetadataKeySyncIdentifier, allowedValues: [syncIdentifier(date, kind)])
+            _ = try await store.deleteObjects(of: kind.quantityType, predicate: predicate)
+        }
+    }
+
     private func requestAccess() async throws {
-        try await store.requestAuthorization(toShare: [bodyMass, bodyFat, leanMass, bodyMassIndex], read: [bodyMass, bodyFat])
+        try await store.requestAuthorization(
+            toShare: Set(Kind.allCases.map(\.quantityType)),
+            read: [Kind.mass.quantityType, Kind.fat.quantityType]
+        )
     }
 
     private func samples(of type: HKQuantityType, matching predicate: NSPredicate) async throws -> [HKQuantitySample] {
@@ -66,6 +88,10 @@ final class HealthSync: Sendable {
             sortDescriptors: [SortDescriptor(\.startDate)]
         )
         return try await descriptor.result(for: store)
+    }
+
+    private func syncIdentifier(_ date: Date, _ kind: Kind) -> String {
+        "smartscale-\(Int(date.timeIntervalSince1970))-\(kind.rawValue)"
     }
 
     private func minute(_ date: Date) -> Int {

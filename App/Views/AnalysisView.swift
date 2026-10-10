@@ -2,8 +2,9 @@ import SwiftData
 import SwiftUI
 
 struct AnalysisView: View {
-    @Environment(ProfileStore.self) private var profile
+    @Environment(SettingsStore.self) private var settings
     @Query private var weighings: [Weighing]
+    @Query private var people: [Person]
 
     init() {
         let start = Calendar.current.date(byAdding: .day, value: -WeightAnalysis.analysisHistoryDays, to: .now) ?? .distantPast
@@ -11,7 +12,8 @@ struct AnalysisView: View {
     }
 
     var body: some View {
-        let points = weighings.points(for: profile.userProfile)
+        let person = people.selected(settings.settings.selectedPersonID)
+        let points = weighings.belonging(to: person).points
         let trend = WeightAnalysis.dailyTrend(points)
         let rate = WeightAnalysis.weeklyRateKg(trend)
 
@@ -20,7 +22,7 @@ struct AnalysisView: View {
                 TrendCard(trendKg: trend.last?.trendKg, weekChange: WeightAnalysis.change(trend, overDays: WeightAnalysis.trendWindowDays))
                 PaceCard(
                     rate: rate,
-                    forecast: WeightAnalysis.forecast(currentKg: trend.last?.trendKg, weeklyRateKg: rate, goalKg: profile.settings.goalWeightKg)
+                    forecast: WeightAnalysis.forecast(currentKg: trend.last?.trendKg, weeklyRateKg: rate, goalKg: person?.goalWeightKg)
                 )
                 CompositionCard(comparison: WeightAnalysis.compositionComparison(
                     points,
@@ -31,6 +33,11 @@ struct AnalysisView: View {
             .padding()
         }
         .navigationTitle("Аналіз")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                PersonPicker(people: people)
+            }
+        }
     }
 }
 

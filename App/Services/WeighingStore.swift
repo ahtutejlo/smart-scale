@@ -8,32 +8,30 @@ struct WeighingStore {
     private static let duplicateWindow: TimeInterval = 180
     private static let duplicateWeightKg = 0.25
 
-    func latest() -> Weighing? {
-        (try? context.fetch(.newest(limit: 1)))?.first
-    }
-
     @discardableResult
-    func insert(_ candidates: [Weighing]) -> Int {
+    func insert(_ candidates: [Weighing]) -> [Weighing] {
         let dates = candidates.map(\.date)
-        guard let earliest = dates.min(), let latest = dates.max() else { return 0 }
+        guard let earliest = dates.min(), let latest = dates.max() else { return [] }
         let from = earliest.addingTimeInterval(-Self.duplicateWindow)
         let to = latest.addingTimeInterval(Self.duplicateWindow)
         let existing = (try? context.fetch(FetchDescriptor<Weighing>(predicate: #Predicate { $0.date >= from && $0.date <= to }))) ?? []
         var byMinute = Dictionary(grouping: existing) { Self.minute($0.date) }
-        var inserted = 0
+        var inserted: [Weighing] = []
         for candidate in candidates {
             let minute = Self.minute(candidate.date)
             let twin = (minute - 3...minute + 3).lazy
                 .flatMap { byMinute[$0] ?? [] }
                 .first { Self.isDuplicate($0, candidate) }
+            let twinOwner = twin?.person
             if let twin {
                 guard twin.source == .appleHealth, candidate.source != .appleHealth else { continue }
                 context.delete(twin)
                 byMinute[Self.minute(twin.date)]?.removeAll { $0 === twin }
             }
             context.insert(candidate)
+            candidate.person = twinOwner
             byMinute[minute, default: []].append(candidate)
-            inserted += 1
+            inserted.append(candidate)
         }
         return inserted
     }

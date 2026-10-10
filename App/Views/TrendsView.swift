@@ -26,17 +26,20 @@ struct TrendsView: View {
         var id: PersistentIdentifier { weighing.persistentModelID }
     }
 
-    @Environment(\.modelContext) private var context
-    @Environment(ProfileStore.self) private var profile
+    @Environment(SettingsStore.self) private var settings
+    @Environment(WeighingRecorder.self) private var recorder
     @Query(sort: \Weighing.date) private var weighings: [Weighing]
+    @Query(filter: #Predicate<Weighing> { $0.person == nil }, sort: \Weighing.date, order: .reverse) private var unassigned: [Weighing]
+    @Query private var people: [Person]
     @State private var period = Period.month
 
     var body: some View {
         let calendar = Calendar.current
+        let person = people.selected(settings.settings.selectedPersonID)
         let start = calendar.date(byAdding: .day, value: -period.rawValue, to: .now) ?? .distantPast
         let smoothingStart = calendar.date(byAdding: .day, value: -WeightAnalysis.trendWindowDays, to: start) ?? start
-        let loaded = Array(weighings.drop { $0.date < smoothingStart })
-        let points = loaded.points(for: profile.userProfile)
+        let loaded = weighings.filter { $0.date >= smoothingStart && $0.person?.id == person?.id }
+        let points = loaded.points
         let trend = WeightAnalysis.dailyTrend(points).filter { $0.day >= start }
         let comparison = WeightAnalysis.compositionComparison(points, overDays: period.rawValue, minimumDays: 1)
         let rows = zip(loaded, points)
@@ -45,6 +48,22 @@ struct TrendsView: View {
             .map { Row(weighing: $0.0, fatPercent: $0.1.fatPercent) }
 
         List {
+            if !unassigned.isEmpty {
+                Section {
+                    ForEach(unassigned) { weighing in
+                        Menu {
+                            AssignActions(weighing: weighing, people: people)
+                        } label: {
+                            WeighingRow(weighing: weighing, fatPercent: nil)
+                        }
+                        .tint(.primary)
+                    }
+                } header: {
+                    Text("Чиї це зважування?")
+                } footer: {
+                    Text("Торкнися зважування, щоб вибрати людину або видалити його.")
+                }
+            }
             Section {
                 Picker("Період", selection: $period) {
                     ForEach(Period.allCases, id: \.self) { Text($0.title).tag($0) }
@@ -57,7 +76,7 @@ struct TrendsView: View {
                 if trend.isEmpty {
                     Text("За цей період зважувань немає.").foregroundStyle(.secondary)
                 } else {
-                    WeightChart(trend: trend, goalKg: profile.settings.goalWeightKg)
+                    WeightChart(trend: trend, goalKg: person?.goalWeightKg)
                 }
             }
             Section {
@@ -74,11 +93,16 @@ struct TrendsView: View {
             Section("Зважування") {
                 ForEach(rows) { WeighingRow(weighing: $0.weighing, fatPercent: $0.fatPercent) }
                     .onDelete { offsets in
-                        offsets.forEach { context.delete(rows[$0].weighing) }
+                        offsets.forEach { recorder.discard(rows[$0].weighing) }
                     }
             }
         }
         .navigationTitle("Тренди")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                PersonPicker(people: people)
+            }
+        }
     }
 }
 

@@ -3,7 +3,6 @@ import SwiftUI
 struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(WeighingRecorder.self) private var recorder
-    @Environment(ProfileStore.self) private var profile
 
     var body: some View {
         TabView {
@@ -16,8 +15,8 @@ struct RootView: View {
             Tab("Аналіз", systemImage: "text.magnifyingglass") {
                 NavigationStack { AnalysisView() }
             }
-            Tab("Профіль", systemImage: "person.crop.circle") {
-                NavigationStack { ProfileView() }
+            Tab("Люди", systemImage: "person.2") {
+                NavigationStack { PeopleView() }
             }
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
@@ -29,9 +28,6 @@ struct RootView: View {
             default:
                 break
             }
-        }
-        .onChange(of: profile.userProfile) {
-            recorder.setForeground(scenePhase != .background)
         }
         .task {
             await recorder.importHealthHistoryOnce()
