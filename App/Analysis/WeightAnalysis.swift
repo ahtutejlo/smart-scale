@@ -33,12 +33,38 @@ struct CompositionComparison: Sendable {
 }
 
 enum CompositionVerdict: Sendable {
-    case losingFat
-    case losingLean
-    case gainingBoth
-    case gainingFat
-    case gainingLean
+    case losingMostlyFat(fatShare: Double)
+    case losingMuchLean(fatShare: Double)
+    case losingNoFat
+    case gainingMostlyFat(fatShare: Double)
+    case gainingMostlyLean
+    case lessFatSameWeight
+    case moreFatSameWeight
     case stable
+}
+
+enum TrendDeviation: Sendable {
+    case matches
+    case water(Double)
+    case food(Double)
+    case large(Double)
+}
+
+struct GoalProgress: Sendable {
+    let startKg: Double
+    let goalKg: Double
+    let currentKg: Double
+
+    init?(startKg: Double?, goalKg: Double?, currentKg: Double?) {
+        guard let startKg, let goalKg, let currentKg, abs(goalKg - startKg) >= 0.1 else { return nil }
+        self.startKg = startKg
+        self.goalKg = goalKg
+        self.currentKg = currentKg
+    }
+
+    var doneKg: Double { goalKg < startKg ? startKg - currentKg : currentKg - startKg }
+    var remainingKg: Double { abs(goalKg - currentKg) }
+    var fraction: Double { min(max(doneKg / abs(goalKg - startKg), 0), 1) }
 }
 
 enum GoalForecast: Equatable, Sendable {
@@ -47,7 +73,7 @@ enum GoalForecast: Equatable, Sendable {
     case notEnoughData
     case movingAway
     case tooSlow
-    case eta(date: Date, goalKg: Double)
+    case eta(earliest: Date, latest: Date)
 }
 
 extension Collection where Element == TrendPoint {
@@ -68,21 +94,17 @@ enum WeightAnalysis {
     static let rateWindowDays = 28
     static let minimumRateDays = 4
     static let minimumRateSpanDays = 7
-    static let compositionWindowDays = 30
+    static let compositionWindowDays = 28
+    static let compositionMinimumDays = 21
     static let analysisHistoryDays = 60
+    static let forecastSpread = 0.8...1.25
+    static let mostlyFatShare = 0.6
 
     static func dailyTrend(_ points: [WeighingPoint], calendar: Calendar = .current) -> [TrendPoint] {
         let daily = groupedByDay(points, calendar: calendar)
         let weights = daily.map { $0.points.map(\.weightKg).mean }
         let smoothed = trailingMeans(daily.map(\.day), weights, calendar: calendar)
         return zip(daily, zip(weights, smoothed)).map { TrendPoint(day: $0.day, weightKg: $1.0, trendKg: $1.1) }
-    }
-
-    static func change(_ trend: [TrendPoint], overDays days: Int, calendar: Calendar = .current) -> Double? {
-        guard let last = trend.last,
-              let target = calendar.date(byAdding: .day, value: -days, to: last.day),
-              let earlier = trend.last(where: { $0.day <= target }) else { return nil }
-        return last.trendKg - earlier.trendKg
     }
 
     static func weeklyRateKg(_ trend: [TrendPoint], calendar: Calendar = .current) -> Double? {
@@ -115,11 +137,13 @@ enum WeightAnalysis {
         guard let weeklyRateKg else { return .notEnoughData }
         if abs(weeklyRateKg) < 0.05 { return .tooSlow }
         if remaining.sign != weeklyRateKg.sign { return .movingAway }
-        let weeks = remaining / weeklyRateKg
-        guard weeks <= 156, let date = calendar.date(byAdding: .day, value: Int((weeks * 7).rounded()), to: now) else {
+        let days = remaining / weeklyRateKg * 7
+        guard days <= 156 * 7,
+              let earliest = calendar.date(byAdding: .day, value: Int((days * forecastSpread.lowerBound).rounded()), to: now),
+              let latest = calendar.date(byAdding: .day, value: Int((days * forecastSpread.upperBound).rounded()), to: now) else {
             return .tooSlow
         }
-        return .eta(date: date, goalKg: goalKg)
+        return .eta(earliest: earliest, latest: latest)
     }
 
     static func compositionComparison(
@@ -145,15 +169,48 @@ enum WeightAnalysis {
     }
 
     static func verdict(_ comparison: CompositionComparison) -> CompositionVerdict {
-        let threshold = 0.3
-        return switch (comparison.fatChangeKg, comparison.leanChangeKg) {
-        case let (fat, lean) where fat < -threshold && lean >= -threshold: .losingFat
-        case let (fat, lean) where fat < -threshold && lean < -threshold: .losingLean
-        case let (fat, lean) where fat > threshold && lean > threshold: .gainingBoth
-        case let (fat, _) where fat > threshold: .gainingFat
-        case let (_, lean) where lean > threshold: .gainingLean
-        default: .stable
+        let threshold = 0.5
+        let weight = comparison.weightChangeKg
+        let fat = comparison.fatChangeKg
+        if weight <= -threshold {
+            let share = fat / weight
+            if share >= mostlyFatShare { return .losingMostlyFat(fatShare: share) }
+            return share > 0 ? .losingMuchLean(fatShare: share) : .losingNoFat
         }
+        if weight >= threshold {
+            let share = fat / weight
+            return share >= mostlyFatShare ? .gainingMostlyFat(fatShare: share) : .gainingMostlyLean
+        }
+        if fat <= -threshold { return .lessFatSameWeight }
+        if fat >= threshold { return .moreFatSameWeight }
+        return .stable
+    }
+
+    static func trendDeviation(of point: WeighingPoint, history: [WeighingPoint], calendar: Calendar = .current) -> TrendDeviation? {
+        guard let start = calendar.date(byAdding: .day, value: -trendWindowDays, to: point.date) else { return nil }
+        let earlier = history.filter { $0.date >= start && $0.date < point.date }
+        guard let trendKg = dailyTrend(earlier, calendar: calendar).last?.trendKg else { return nil }
+        let difference = point.weightKg - trendKg
+        return switch abs(difference) {
+        case ..<0.1: .matches
+        case ..<1: .water(difference)
+        case ..<3: .food(difference)
+        default: .large(difference)
+        }
+    }
+
+    static func streakDays(_ dates: [Date], today: Date = .now, calendar: Calendar = .current) -> Int {
+        let weighedDays = Set(dates.map { calendar.startOfDay(for: $0) })
+        var day = calendar.startOfDay(for: today)
+        if !weighedDays.contains(day), let yesterday = calendar.date(byAdding: .day, value: -1, to: day) {
+            day = yesterday
+        }
+        var count = 0
+        while weighedDays.contains(day), let previous = calendar.date(byAdding: .day, value: -1, to: day) {
+            count += 1
+            day = previous
+        }
+        return count
     }
 
     private static func groupedByDay(_ points: [WeighingPoint], calendar: Calendar) -> [(day: Date, points: [WeighingPoint])] {

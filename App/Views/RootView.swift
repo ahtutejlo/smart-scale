@@ -6,14 +6,11 @@ struct RootView: View {
 
     var body: some View {
         TabView {
-            Tab("Зважування", systemImage: "scalemass") {
-                NavigationStack { WeighView() }
+            Tab("Сьогодні", systemImage: "sun.max") {
+                NavigationStack { TodayView() }
             }
-            Tab("Тренди", systemImage: "chart.xyaxis.line") {
-                NavigationStack { TrendsView() }
-            }
-            Tab("Аналіз", systemImage: "text.magnifyingglass") {
-                NavigationStack { AnalysisView() }
+            Tab("Історія", systemImage: "chart.xyaxis.line") {
+                NavigationStack { HistoryView() }
             }
             Tab("Люди", systemImage: "person.2") {
                 NavigationStack { PeopleView() }
@@ -29,6 +26,7 @@ struct RootView: View {
                 break
             }
         }
+        .confirmsUnusualAssignment(recorder)
         .task {
             await recorder.importHealthHistoryOnce()
         }

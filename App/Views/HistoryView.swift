@@ -2,7 +2,7 @@ import Charts
 import SwiftData
 import SwiftUI
 
-struct TrendsView: View {
+struct HistoryView: View {
     enum Period: Int, CaseIterable {
         case week = 7
         case month = 30
@@ -88,16 +88,22 @@ struct TrendsView: View {
             } header: {
                 Text("З чого складається вага")
             } footer: {
-                Text("Маса без жиру — це м'язи, вода, кістки й органи. Кожне значення — середнє за \(WeightAnalysis.trendWindowDays) днів, тому може трохи відрізнятися від окремого зважування.")
+                Text("Маса без жиру — це м'язи, вода, кістки й органи. Кожне значення — середнє за \(WeightAnalysis.trendWindowDays.daysText), тому може трохи відрізнятися від окремого зважування.")
             }
             Section("Зважування") {
-                ForEach(rows) { WeighingRow(weighing: $0.weighing, fatPercent: $0.fatPercent) }
-                    .onDelete { offsets in
-                        offsets.forEach { recorder.discard(rows[$0].weighing) }
+                ForEach(rows) { row in
+                    NavigationLink {
+                        WeighingDetailView(weighing: row.weighing)
+                    } label: {
+                        WeighingRow(weighing: row.weighing, fatPercent: row.fatPercent)
                     }
+                }
+                .onDelete { offsets in
+                    offsets.forEach { recorder.discard(rows[$0].weighing) }
+                }
             }
         }
-        .navigationTitle("Тренди")
+        .navigationTitle("Історія")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 PersonPicker(people: people)
@@ -112,26 +118,18 @@ private struct WeighingRow: View {
 
     var body: some View {
         HStack {
-            Image(systemName: source.symbol)
+            Image(systemName: weighing.sourceLabel.symbol)
                 .foregroundStyle(.secondary)
                 .frame(width: 24)
-                .accessibilityLabel(source.label)
+                .accessibilityLabel(weighing.sourceLabel.text)
             VStack(alignment: .leading) {
-                Text(weighing.date.formatted(date: .abbreviated, time: .shortened))
+                Text(weighing.date.dayAndTime)
                 if let fatPercent {
                     Text("жир \(fatPercent.percent)").font(.caption).foregroundStyle(.secondary)
                 }
             }
             Spacer()
             Text(weighing.weightKg.kg).monospacedDigit().font(.body.weight(.semibold))
-        }
-    }
-
-    private var source: (symbol: String, label: String) {
-        switch weighing.source {
-        case .scale: ("scalemass", "З ваг")
-        case .scaleMemory: ("memorychip", "З пам'яті ваг")
-        case .appleHealth: ("heart.text.square", "З Apple Health")
         }
     }
 }
@@ -142,7 +140,7 @@ private struct WeightChart: View {
     @State private var selectedDay: Date?
 
     private static let daily = "щоденна вага"
-    private static let average = "середнє за \(WeightAnalysis.trendWindowDays) днів"
+    private static let average = "середнє за \(WeightAnalysis.trendWindowDays.daysText)"
 
     var body: some View {
         Chart {
@@ -195,18 +193,14 @@ private struct CompositionComparisonView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("За цей час: вага \(comparison.weightChangeKg.signedKg), жир \(comparison.fatChangeKg.signedKg), без жиру \(comparison.leanChangeKg.signedKg)")
                 .font(.subheadline.weight(.semibold))
-            SplitBar(title: title(for: comparison.before.day), split: comparison.before, maxWeightKg: maxWeightKg)
-            SplitBar(title: title(for: comparison.after.day), split: comparison.after, maxWeightKg: maxWeightKg)
+            SplitBar(title: comparison.before.day.shortDay, split: comparison.before, maxWeightKg: maxWeightKg)
+            SplitBar(title: comparison.after.day.shortDay, split: comparison.after, maxWeightKg: maxWeightKg)
             HStack(spacing: 16) {
                 legend("жир", color: ChartPalette.secondary)
                 legend("без жиру", color: ChartPalette.primary)
             }
         }
         .padding(.vertical, 8)
-    }
-
-    private func title(for day: Date) -> String {
-        Calendar.current.isDateInToday(day) ? "Сьогодні" : day.formatted(.dateTime.day().month(.abbreviated))
     }
 
     private func legend(_ text: String, color: Color) -> some View {
@@ -231,15 +225,8 @@ private struct SplitBar: View {
             }
             .font(.subheadline)
             GeometryReader { proxy in
-                let width = proxy.size.width * split.weightKg / maxWeightKg
-                HStack(spacing: 2) {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(ChartPalette.secondary)
-                        .frame(width: max(0, width - 2) * split.fatKg / split.weightKg)
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(ChartPalette.primary)
-                }
-                .frame(width: width)
+                FatLeanBar(fatKg: split.fatKg, leanKg: split.leanKg)
+                    .frame(width: proxy.size.width * split.weightKg / maxWeightKg)
             }
             .frame(height: 20)
             Text("жир \(split.fatKg.kg) · без жиру \(split.leanKg.kg)")

@@ -19,7 +19,9 @@ enum DemoData {
         owner.age = 36
         owner.heightCm = 180
         owner.goalWeightKg = 84
+        owner.goalStartWeightKg = 91
         let partner = Person(name: "Марія", sex: .female, age: 31, heightCm: 165, goalWeightKg: 58)
+        partner.goalStartWeightKg = 63
         context.insert(partner)
 
         let calendar = Calendar.current

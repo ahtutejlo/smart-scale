@@ -22,6 +22,7 @@ struct SmartScaleApp: App {
             fatalError("Cannot open the weighings store: \(error)")
         }
         PeopleSetup.ensureOwner(in: container.mainContext, defaults: defaults)
+        PeopleSetup.syncGoalStarts(in: container.mainContext)
         let settings = SettingsStore(defaults: defaults)
         self.container = container
         _settings = State(initialValue: settings)

@@ -122,6 +122,7 @@ private struct PersonForm: View {
         case age
         case height
         case goal
+        case start
     }
 
     @Bindable var person: Person
@@ -146,14 +147,30 @@ private struct PersonForm: View {
                         .keyboardType(.numberPad)
                         .focused($focusedField, equals: .height)
                 }
+            } footer: {
+                Text("Ваги міряють лише опір тіла слабкому струму. Жир, м'язи й воду апка рахує з нього разом зі статтю, віком і зростом.")
+            }
+            Section {
                 row("Цільова вага", unit: "кг") {
                     TextField("напр. 80", value: $person.goalWeightKg, format: .number.precision(.fractionLength(0...1)))
                         .keyboardType(.decimalPad)
                         .focused($focusedField, equals: .goal)
                 }
+                if person.goalWeightKg != nil {
+                    row("Стартова вага", unit: "кг") {
+                        TextField("напр. 90", value: $person.goalStartWeightKg, format: .number.precision(.fractionLength(0...1)))
+                            .keyboardType(.decimalPad)
+                            .focused($focusedField, equals: .start)
+                    }
+                }
+            } header: {
+                Text("Ціль")
             } footer: {
-                Text("Ваги міряють лише опір тіла слабкому струму. Жир, м'язи й воду апка рахує з нього разом зі статтю, віком і зростом.")
+                Text("Від стартової ваги рахується, яку частину шляху до цілі вже пройдено. Апка ставить сюди вагу з дня, коли вказано ціль.")
             }
+        }
+        .onChange(of: person.goalWeightKg) {
+            person.syncGoalStart()
         }
         .scrollDismissesKeyboard(.interactively)
         .toolbar {

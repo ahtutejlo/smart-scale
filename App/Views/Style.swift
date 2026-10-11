@@ -35,6 +35,35 @@ extension Double {
     var percent: String { "\(formatted(digits: 1)) %" }
 }
 
+extension Int {
+    var daysText: String {
+        let lastTwo = self % 100
+        let word = switch self % 10 {
+        case 1 where lastTwo != 11: "день"
+        case 2...4 where !(12...14).contains(lastTwo): "дні"
+        default: "днів"
+        }
+        return "\(self) \(word)"
+    }
+}
+
+extension Date {
+    var dayAndTime: String {
+        let calendar = Calendar.current
+        let time = formatted(date: .omitted, time: .shortened)
+        if calendar.isDateInToday(self) { return "Сьогодні, \(time)" }
+        if calendar.isDateInYesterday(self) { return "Вчора, \(time)" }
+        if calendar.isDate(self, equalTo: .now, toGranularity: .year) {
+            return "\(formatted(.dateTime.day().month(.abbreviated))), \(time)"
+        }
+        return formatted(date: .abbreviated, time: .shortened)
+    }
+
+    var shortDay: String {
+        Calendar.current.isDateInToday(self) ? "Сьогодні" : formatted(.dateTime.day().month(.abbreviated))
+    }
+}
+
 extension View {
     func cardStyle() -> some View {
         frame(maxWidth: .infinity, alignment: .leading)
@@ -58,19 +87,44 @@ struct Card<Content: View>: View {
     }
 }
 
-struct MetricCell: View {
-    let title: String
-    let value: String
+extension Norm.Tone {
+    var color: Color {
+        switch self {
+        case .good: Color(.systemGreen)
+        case .warning: Color(.systemOrange)
+        case .neutral: Color(.secondaryLabel)
+        }
+    }
+}
+
+struct NormChip: View {
+    let norm: Norm
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.title3.weight(.semibold))
-                .monospacedDigit()
+        Text(norm.label)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(norm.tone.color)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
+            .background(norm.tone.color.opacity(0.15), in: .capsule)
+    }
+}
+
+struct FatLeanBar: View {
+    let fatKg: Double
+    let leanKg: Double
+
+    var body: some View {
+        GeometryReader { proxy in
+            HStack(spacing: 2) {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(ChartPalette.secondary)
+                    .frame(width: max(0, proxy.size.width - 2) * fatKg / max(fatKg + leanKg, 0.01))
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(ChartPalette.primary)
+            }
         }
+        .accessibilityHidden(true)
     }
 }
 

@@ -6,9 +6,16 @@ import SwiftData
 @Observable
 @MainActor
 final class WeighingRecorder {
+    struct PendingAssignment {
+        let weighing: Weighing
+        let person: Person
+        let usualKg: Double
+    }
+
     let connection = ScaleConnection()
     private(set) var healthMessage: String?
     private(set) var isImporting = false
+    private(set) var pendingAssignment: PendingAssignment?
 
     private let context: ModelContext
     private let store: WeighingStore
@@ -49,10 +56,28 @@ final class WeighingRecorder {
         connection.start(profile: profile)
     }
 
-    func assign(_ weighing: Weighing, to person: Person) {
-        let previous = weighing.person
-        weighing.person = person
-        ownershipChanged(weighing, from: previous)
+    func isJustFinished(_ weighing: Weighing) -> Bool {
+        guard case let .finished(reading) = connection.state else { return false }
+        return reading.date == weighing.date
+    }
+
+    func requestAssign(_ weighing: Weighing, to person: Person) {
+        if let usualKg = person.usualWeightKg(near: weighing.date, excluding: weighing),
+           !PersonMatcher.fits(weightKg: weighing.weightKg, usualKg: usualKg) {
+            pendingAssignment = PendingAssignment(weighing: weighing, person: person, usualKg: usualKg)
+        } else {
+            assign(weighing, to: person)
+        }
+    }
+
+    func confirmPendingAssignment() {
+        guard let pending = pendingAssignment else { return }
+        pendingAssignment = nil
+        assign(pending.weighing, to: pending.person)
+    }
+
+    func cancelPendingAssignment() {
+        pendingAssignment = nil
     }
 
     func discard(_ weighing: Weighing) {
@@ -84,6 +109,12 @@ final class WeighingRecorder {
         } catch {
             healthMessage = "Не вдалося прочитати Apple Health: \(error.localizedDescription)"
         }
+    }
+
+    private func assign(_ weighing: Weighing, to person: Person) {
+        let previous = weighing.person
+        weighing.person = person
+        ownershipChanged(weighing, from: previous)
     }
 
     private func record(_ reading: ScaleReading, source: Weighing.Source) {

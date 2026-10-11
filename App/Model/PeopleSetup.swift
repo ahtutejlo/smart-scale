@@ -28,4 +28,10 @@ enum PeopleSetup {
             weighing.person = owner
         }
     }
+
+    static func syncGoalStarts(in context: ModelContext) {
+        for person in (try? context.fetch(FetchDescriptor<Person>())) ?? [] {
+            person.syncGoalStart()
+        }
+    }
 }

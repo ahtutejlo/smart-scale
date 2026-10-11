@@ -10,6 +10,7 @@ final class Person {
     var age: Int?
     var heightCm: Int?
     var goalWeightKg: Double?
+    var goalStartWeightKg: Double?
     var isOwner: Bool
     @Relationship(deleteRule: .nullify, inverse: \Weighing.person) var weighings: [Weighing] = []
 
@@ -41,6 +42,21 @@ final class Person {
 
     var latestWeightKg: Double? {
         weighings.max { $0.date < $1.date }?.weightKg
+    }
+
+    func usualWeightKg(near date: Date, excluding weighing: Weighing) -> Double? {
+        weighings
+            .filter { $0 !== weighing }
+            .min { abs($0.date.timeIntervalSince(date)) < abs($1.date.timeIntervalSince(date)) }?
+            .weightKg
+    }
+
+    func syncGoalStart() {
+        if goalWeightKg == nil {
+            goalStartWeightKg = nil
+        } else if goalStartWeightKg == nil {
+            goalStartWeightKg = latestWeightKg
+        }
     }
 }
 

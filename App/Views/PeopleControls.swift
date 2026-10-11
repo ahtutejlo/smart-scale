@@ -29,13 +29,33 @@ struct PersonPicker: View {
 struct AssignActions: View {
     let weighing: Weighing
     let people: [Person]
+    var allowsDiscard = true
     @Environment(WeighingRecorder.self) private var recorder
 
     var body: some View {
         ForEach(people.ownerFirst()) { person in
-            Button(person.displayName) { recorder.assign(weighing, to: person) }
+            Button(person.displayName) { recorder.requestAssign(weighing, to: person) }
         }
-        Divider()
-        Button("Гість, не зберігати", role: .destructive) { recorder.discard(weighing) }
+        if allowsDiscard {
+            Divider()
+            Button("Гість, не зберігати", role: .destructive) { recorder.discard(weighing) }
+        }
+    }
+}
+
+extension View {
+    func confirmsUnusualAssignment(_ recorder: WeighingRecorder) -> some View {
+        let pending = recorder.pendingAssignment
+        return alert(
+            "Точно \(pending?.person.displayName ?? "")?",
+            isPresented: Binding(get: { recorder.pendingAssignment != nil }, set: { if !$0 { recorder.cancelPendingAssignment() } }),
+            presenting: pending
+        ) { pending in
+            Button("Так, це \(pending.person.displayName)") { recorder.confirmPendingAssignment() }
+            Button("Скасувати", role: .cancel) { recorder.cancelPendingAssignment() }
+        } message: { pending in
+            let difference = pending.weighing.weightKg - pending.usualKg
+            Text("Зважування \(pending.weighing.weightKg.kg) на \(abs(difference).kg) \(difference > 0 ? "більше" : "менше"), ніж зазвичай важить ця людина (\(pending.usualKg.kg)).")
+        }
     }
 }
